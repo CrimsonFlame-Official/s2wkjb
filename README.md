@@ -61,3 +61,13 @@ Run it on a PC, point the Switch's DNS at that PC, then trigger
 
 Research in progress. No exploit found yet. Updates will be posted
 here when something is actually tested, not before.
+
+## More in this repo
+
+- `RESEARCH.md`: full checklist, Userland and Danger / Kernel tabs,
+  ban vs brick, tester plan, Switch 1 port notes.
+- `lab/test_buttons.html`: test-buttons page structure, Userland
+  and Danger tabs, placeholders only, no payloads yet.
+- `VERSIONS.md`: version table, blank until a real fingerprint is captured.
+- `TESTER_SAFETY.md`: safety sheet and checklist for any tester,
+  especially for kernel tests.

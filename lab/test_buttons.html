@@ -1,0 +1,66 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>s2wkjb test buttons</title>
+<style>
+body{font-family:sans-serif;margin:20px}
+button{display:block;margin:8px 0;padding:10px 16px;font-size:16px}
+.tab{display:none}.tab.active{display:block}
+#danger{display:none}
+.warn{border:2px solid red;padding:12px;margin:12px 0}
+</style></head>
+<body>
+<h1>s2wkjb - Web Hack test page</h1>
+<p>Research in progress. No exploit here yet. Each button is a placeholder test case.
+A crash is not an escape. Log results privately.</p>
+<div>
+<button onclick="show('userland')">Userland tab</button>
+<button onclick="show('danger')">Danger / Kernel tab</button>
+</div>
+
+<div id="userland" class="tab active">
+<h2>Userland tests</h2>
+<button onclick="test('integer-overflow')">Integer overflow / underflow</button>
+<button onclick="test('use-after-free')">Use-after-free</button>
+<button onclick="test('type-confusion')">Type confusion</button>
+<button onclick="test('oob-buffer')">Out-of-bounds buffer</button>
+<button onclick="test('heap-groom')">Heap grooming / spray (setup)</button>
+<button onclick="test('jit-bug')">JIT optimization bug</button>
+<button onclick="test('font-css')">Font / CSS parsing</button>
+<button onclick="test('media-decode')">Image / media decoding</button>
+<button onclick="test('dom-uaf')">DOM use-after-free</button>
+<button onclick="test('double-free')">Double free</button>
+<button onclick="test('nday-cve')">Known n-day CVE test (version-matched)</button>
+<button onclick="test('fuzz')">Fuzzing run</button>
+</div>
+
+<div id="danger" class="tab">
+<div class="warn">
+<h2>WARNING - Danger / Kernel tab</h2>
+<p>Kernel tests can cause bans, soft bricks, data loss, and hard bricks.
+Do not run these on a primary Switch, a primary account, or a Switch
+with saves you care about. Back up first. Stay offline while testing.
+Only run these if you accept that a brick is possible.</p>
+<button onclick="document.getElementById('danger-tests').style.display='block'">I understand the risk, show kernel tests</button>
+</div>
+<div id="danger-tests" style="display:none">
+<h2>Kernel tests</h2>
+<button onclick="test('priv-sysmodule')">Privileged sysmodule to kernel escalation</button>
+<button onclick="test('syscall-bug')">Kernel syscall argument bug</button>
+<button onclick="test('kernel-uaf')">Kernel object use-after-free / double free</button>
+<button onclick="test('trustzone')">TrustZone / secure monitor - highest brick risk</button>
+<button onclick="test('driver-bug')">Driver / peripheral bug</button>
+</div>
+</div>
+
+<pre id="log"></pre>
+<script>
+function show(id){
+  document.querySelectorAll('.tab').forEach(function(t){t.classList.remove('active')});
+  document.getElementById(id).classList.add('active');
+}
+function test(name){
+  var msg = 'Test clicked: ' + name + ' - placeholder only, no payload implemented yet.';
+  document.getElementById('log').textContent += msg + '\n';
+  try{fetch('/log',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({test:name,note:'placeholder'})})}catch(e){}
+}
+</script>
+</body></html>
