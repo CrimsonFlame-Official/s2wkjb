@@ -27,7 +27,33 @@ PAGE = b"""<!doctype html>
 <html><head><meta charset="utf-8"><title>s2wkjb lab</title></head>
 <body><h1>s2wkjb lab page loaded</h1>
 <p>If you see this on the Switch, the captive portal entry works.</p>
-<script>document.write('<p>User-Agent: ' + navigator.userAgent + '</p>');</script>
+<pre id="info">collecting...</pre>
+<script>
+try {
+  var info = {
+    userAgent: navigator.userAgent,
+    platform: navigator.platform,
+    language: navigator.language,
+    languages: navigator.languages,
+    hardwareConcurrency: navigator.hardwareConcurrency,
+    maxTouchPoints: navigator.maxTouchPoints,
+    cookieEnabled: navigator.cookieEnabled,
+    screenWidth: screen.width, screenHeight: screen.height,
+    availWidth: screen.availWidth, availHeight: screen.availHeight,
+    colorDepth: screen.colorDepth, pixelDepth: screen.pixelDepth,
+    devicePixelRatio: window.devicePixelRatio,
+    innerWidth: window.innerWidth, innerHeight: window.innerHeight,
+    timezoneOffset: new Date().getTimezoneOffset()
+  };
+  document.getElementById('info').textContent = JSON.stringify(info, null, 2);
+  // Send it back to the lab server so it can be logged, not just shown.
+  try {
+    fetch('/log', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(info)});
+  } catch (e) {}
+} catch (e) {
+  document.getElementById('info').textContent = 'collect failed: ' + e;
+}
+</script>
 </body></html>
 """
 
@@ -58,6 +84,17 @@ class HTTPHandler(http.server.BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(PAGE)))
         self.end_headers()
         self.wfile.write(PAGE)
+
+    def do_POST(self):
+        if self.path == "/log":
+            length = int(self.headers.get("Content-Length", 0))
+            body = self.rfile.read(length) if length else b""
+            print(f"[fingerprint] {self.client_address[0]}: {body.decode('utf-8', 'replace')}", flush=True)
+            self.send_response(204)
+            self.end_headers()
+        else:
+            self.send_response(404)
+            self.end_headers()
 
     def log_message(self, *args):
         pass
