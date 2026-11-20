@@ -1,9 +1,10 @@
 # s2wkjb Pico W captive-portal lab
 # --------------------------------
 # A Raspberry Pi Pico W running MicroPython becomes a pocket lab:
-# it broadcasts its own Wi-Fi, answers every DNS query with its own
-# address, and serves the fingerprint + test-attempt page to the
-# Switch's captive-portal browser (WifiWebAuthApplet).
+# it broadcasts its own Wi-Fi, hands out IP addresses (DHCP),
+# answers every DNS query with its own address, and serves the
+# fingerprint + test-attempt page to the Switch's captive-portal
+# browser (WifiWebAuthApplet).
 #
 # Copy this file to the Pico as main.py. It runs on boot.
 # No laptop needed once MicroPython is flashed.
@@ -20,6 +21,9 @@ import machine
 SSID = "WebHacks"
 DNS_PORT = 53
 HTTP_PORT = 80
+DHCP_PORT = 67
+SERVER_IP = "192.168.4.1"
+LEASE_TIME = 3600
 
 PAGE = """<!DOCTYPE html>
 <html>
@@ -163,6 +167,100 @@ def handle_http_request(req):
     return head.encode("utf-8") + body
 
 
+# --- Minimal DHCP server ---
+# Without this the Switch joins the Wi-Fi but never gets an IP
+# address, so its connection test fails with 2110-1100 before it
+# ever asks for the portal page. This hands out 192.168.4.x,
+# gateway + DNS 192.168.4.1 (the Pico itself).
+
+_leases = {}   # client MAC bytes -> IP string
+_next_host = [2]
+
+
+def _ip_bytes(s):
+    return bytes(int(x) for x in s.split("."))
+
+
+def _parse_dhcp_options(pkt):
+    opts = {}
+    i = 240
+    while i + 1 < len(pkt):
+        code = pkt[i]
+        if code == 0:
+            i += 1
+            continue
+        if code == 255:
+            break
+        ln = pkt[i + 1]
+        opts[code] = pkt[i + 2:i + 2 + ln]
+        i += 2 + ln
+    return opts
+
+
+def _build_dhcp_reply(req, msg_type, yiaddr):
+    xid = req[4:8]
+    flags = req[10:12]
+    chaddr = req[28:44]
+    yiaddr_b = _ip_bytes(yiaddr)
+    siaddr_b = _ip_bytes(SERVER_IP)
+    header = (b"\x02\x01\x06\x00" + xid + b"\x00\x00" + flags +
+              b"\x00\x00\x00\x00" + yiaddr_b + siaddr_b +
+              b"\x00\x00\x00\x00" + chaddr + b"\x00" * 64 + b"\x00" * 128)
+    opts = (b"\x63\x82\x53\x63" +
+            b"\x35\x01" + bytes([msg_type]) +
+            b"\x36\x04" + siaddr_b +
+            b"\x33\x04" + LEASE_TIME.to_bytes(4, "big") +
+            b"\x01\x04" + b"\xff\xff\xff\x00" +
+            b"\x03\x04" + siaddr_b +
+            b"\x06\x04" + siaddr_b +
+            b"\xff")
+    pkt = header + opts
+    if len(pkt) < 300:
+        pkt += b"\x00" * (300 - len(pkt))
+    return pkt
+
+
+def _offer_ip(chaddr):
+    if chaddr in _leases:
+        return _leases[chaddr]
+    host = _next_host[0]
+    _next_host[0] = host + 1 if host < 100 else 2
+    ip = "192.168.4.%d" % host
+    _leases[chaddr] = ip
+    return ip
+
+
+def handle_dhcp_request(pkt):
+    # Returns (reply_bytes, yiaddr) or None.
+    if len(pkt) < 240:
+        return None
+    if pkt[236:240] != b"\x63\x82\x53\x63":
+        return None
+    if pkt[0] != 1:
+        return None
+    opts = _parse_dhcp_options(pkt)
+    msg = opts.get(53)
+    if not msg:
+        return None
+    mtype = msg[0]
+    chaddr = bytes(pkt[28:34])
+    if mtype == 1:  # DISCOVER -> OFFER
+        ip = _offer_ip(chaddr)
+        return _build_dhcp_reply(pkt, 2, ip), ip
+    if mtype == 3:  # REQUEST -> ACK
+        req_ip = opts.get(50)
+        if req_ip and len(req_ip) == 4:
+            ip = "%d.%d.%d.%d" % (req_ip[0], req_ip[1], req_ip[2], req_ip[3])
+            if ip.startswith("192.168.4."):
+                _leases[chaddr] = ip
+            else:
+                ip = _offer_ip(chaddr)
+        else:
+            ip = _offer_ip(chaddr)
+        return _build_dhcp_reply(pkt, 5, ip), ip
+    return None
+
+
 def run():
     ap = network.WLAN(network.AP_IF)
     ap.active(True)
@@ -177,6 +275,11 @@ def run():
     dns_sock.bind(("0.0.0.0", DNS_PORT))
     dns_sock.settimeout(0.05)
 
+    dhcp_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    dhcp_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    dhcp_sock.bind(("0.0.0.0", DHCP_PORT))
+    dhcp_sock.settimeout(0.05)
+
     http_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     http_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     http_sock.bind(("0.0.0.0", HTTP_PORT))
@@ -187,6 +290,17 @@ def run():
     print("Serving captive portal. Join the WebHacks Wi-Fi.")
     n = 0
     while True:
+        try:
+            data, addr = dhcp_sock.recvfrom(1024)
+            out = handle_dhcp_request(data)
+            if out:
+                reply, yiaddr = out
+                try:
+                    dhcp_sock.sendto(reply, ("255.255.255.255", 68))
+                except OSError:
+                    dhcp_sock.sendto(reply, (yiaddr, 68))
+        except OSError:
+            pass
         try:
             data, addr = dns_sock.recvfrom(512)
             resp = build_dns_response(data, ip)
@@ -216,6 +330,7 @@ def run():
         n += 1
         if n % 20 == 0:
             led.value(not led.value())
+        time.sleep(0.05)
 
 
 if __name__ == "__main__":
