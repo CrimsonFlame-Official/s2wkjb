@@ -68,12 +68,8 @@ button{display:block;width:100%;font-size:19px;padding:14px;margin:8px 0;border-
 <p>Attempts to try, not working exploits. Tap one. If it does nothing, try the next one.</p>
 <div id="buttons"></div>
 <div id="log">No attempt tapped yet.</div>
-<h2>Danger - kernel</h2>
-<p class="warn">Do NOT run these on your main Switch. Kernel tests are for spare consoles only. These are placeholders, not working exploits.</p>
-<div id="danger"></div>
 <script>
 var attempts = ["Integer overflow","Use-after-free","Type confusion","Out-of-bounds buffer","Heap grooming","JIT bug","Font / CSS parsing","Media decoding","DOM use-after-free","Double free","N-day CVE test","Fuzzing"];
-var danger = ["Privileged sysmodule escalation","Syscall bug","Kernel object use-after-free","TrustZone / secure monitor","Driver bug"];
 document.getElementById("ua-js").textContent = navigator.userAgent;
 var rows = [
 ["Platform", navigator.platform],
@@ -109,7 +105,6 @@ p.appendChild(b);
 }
 }
 mk(attempts, "buttons");
-mk(danger, "danger");
 </script>
 </body>
 </html>

@@ -48,6 +48,6 @@ They do the same thing. Pick the one that matches what is on your Pico.
   from JavaScript. They should match.
 - Nothing is uploaded anywhere. The Pico only serves the page on its own
   little network.
-- The Danger section is placeholders only, same as the repo's test page.
+- The page has Userland attempt buttons only. There is no kernel/Danger section on the page, so there is nothing to tap by accident.
 - No exploit payloads live here. The fingerprint decides which attempt to
   build for real first.
