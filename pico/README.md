@@ -1,23 +1,33 @@
 # Pico W captive-portal lab (s2wkjb)
 
-A pocket version of the s2wkjb lab: a Raspberry Pi Pico W running MicroPython
-broadcasts its own Wi-Fi, answers all DNS with itself, and serves the
-fingerprint + test-attempt page to the Switch's captive-portal browser
-(WifiWebAuthApplet). No laptop needed once MicroPython is on the Pico.
+A pocket version of the s2wkjb lab: a Raspberry Pi Pico W broadcasts its
+own Wi-Fi, answers all DNS with itself, and serves the fingerprint +
+test-attempt page to the Switch's captive-portal browser
+(WifiWebAuthApplet). No laptop needed once the firmware is on the Pico.
+
+## Which file is for your Pico?
+
+- **CircuitPython** (the drive shows up as `CIRCUITPY`): use `code.py`.
+  CircuitPython runs `code.py` on boot.
+- **MicroPython** (the drive shows up as `RPI-RP2`): use `main.py`.
+  MicroPython runs `main.py` on boot.
+
+They do the same thing. Pick the one that matches what is on your Pico.
 
 ## What you need
 
 - Raspberry Pi Pico W (the W version, it has Wi-Fi)
-- MicroPython already flashed (hold BOOTSEL, drag the UF2 over — one time,
-  needs a computer)
+- CircuitPython or MicroPython already flashed (hold BOOTSEL, drag the UF2
+  over — one time, needs a computer)
 - USB cable + power (phone, power bank, or charger)
 
 ## Install
 
 1. Plug the Pico into your phone (USB OTG). It shows up as a USB drive.
-2. Copy `main.py` onto it, replacing the one that's there.
-3. Unplug the Pico and plug it back in (or press reset). It runs `main.py`
-   on boot.
+2. Copy the right file onto it (`code.py` for CircuitPython,
+   `main.py` for MicroPython), replacing the one that's there.
+3. CircuitPython reloads the file on its own. If nothing happens, unplug
+   the Pico and plug it back in (or press reset).
 4. The Pico broadcasts an open Wi-Fi network called `WebHacks`.
 
 ## Use it
