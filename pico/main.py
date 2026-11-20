@@ -167,6 +167,18 @@ def handle_http_request(req):
     return head.encode("utf-8") + body
 
 
+def _try_bind(sock, addr, tries=5):
+    # True if the bind landed. Retries briefly, for the case where a
+    # previous run's socket is still being released after a reload.
+    for _ in range(tries):
+        try:
+            sock.bind(addr)
+            return True
+        except OSError:
+            time.sleep(0.3)
+    return False
+
+
 # --- Minimal DHCP server ---
 # Without this the Switch joins the Wi-Fi but never gets an IP
 # address, so its connection test fails with 2110-1100 before it
@@ -272,17 +284,34 @@ def run():
 
     dns_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     dns_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    dns_sock.bind(("0.0.0.0", DNS_PORT))
+    if not _try_bind(dns_sock, ("0.0.0.0", DNS_PORT)):
+        raise OSError("could not bind DNS port")
     dns_sock.settimeout(0.05)
 
-    dhcp_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    dhcp_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    dhcp_sock.bind(("0.0.0.0", DHCP_PORT))
-    dhcp_sock.settimeout(0.05)
+    # DHCP is best-effort: if something else already holds port 67
+    # (for example the firmware's own AP DHCP server), skip ours
+    # instead of crashing.
+    dhcp_sock = None
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        if _try_bind(s, ("0.0.0.0", DHCP_PORT)):
+            dhcp_sock = s
+            dhcp_sock.settimeout(0.05)
+        else:
+            print("DHCP port busy - using the built-in DHCP server")
+            try:
+                s.close()
+            except OSError:
+                pass
+    except OSError:
+        print("DHCP port busy - using the built-in DHCP server")
+        dhcp_sock = None
 
     http_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     http_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    http_sock.bind(("0.0.0.0", HTTP_PORT))
+    if not _try_bind(http_sock, ("0.0.0.0", HTTP_PORT)):
+        raise OSError("could not bind HTTP port")
     http_sock.listen(5)
     http_sock.settimeout(0.05)
 
@@ -290,17 +319,18 @@ def run():
     print("Serving captive portal. Join the WebHacks Wi-Fi.")
     n = 0
     while True:
-        try:
-            data, addr = dhcp_sock.recvfrom(1024)
-            out = handle_dhcp_request(data)
-            if out:
-                reply, yiaddr = out
-                try:
-                    dhcp_sock.sendto(reply, ("255.255.255.255", 68))
-                except OSError:
-                    dhcp_sock.sendto(reply, (yiaddr, 68))
-        except OSError:
-            pass
+        if dhcp_sock is not None:
+            try:
+                data, addr = dhcp_sock.recvfrom(1024)
+                out = handle_dhcp_request(data)
+                if out:
+                    reply, yiaddr = out
+                    try:
+                        dhcp_sock.sendto(reply, ("255.255.255.255", 68))
+                    except OSError:
+                        dhcp_sock.sendto(reply, (yiaddr, 68))
+            except OSError:
+                pass
         try:
             data, addr = dns_sock.recvfrom(512)
             resp = build_dns_response(data, ip)

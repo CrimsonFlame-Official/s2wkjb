@@ -282,6 +282,18 @@ def _arm_socket(sock):
         sock.setblocking(False)
 
 
+def _try_bind(sock, addr, tries=5):
+    # True if the bind landed. Retries briefly, for the case where a
+    # previous run's socket is still being released after a reload.
+    for _ in range(tries):
+        try:
+            sock.bind(addr)
+            return True
+        except OSError:
+            time.sleep(0.3)
+    return False
+
+
 def run():
     wifi.radio.start_ap(ssid=SSID)
     ip = str(wifi.radio.ipv4_address_ap)
@@ -290,21 +302,40 @@ def run():
     pool = socketpool.SocketPool(wifi.radio)
 
     dns_sock = pool.socket(pool.AF_INET, pool.SOCK_DGRAM)
-    dns_sock.bind(("0.0.0.0", DNS_PORT))
+    if not _try_bind(dns_sock, ("0.0.0.0", DNS_PORT)):
+        raise OSError("could not bind DNS port")
     _arm_socket(dns_sock)
 
-    dhcp_sock = pool.socket(pool.AF_INET, pool.SOCK_DGRAM)
-    dhcp_sock.bind(("0.0.0.0", DHCP_PORT))
-    _arm_socket(dhcp_sock)
+    # DHCP is best-effort: CircuitPython's own AP already runs a DHCP
+    # server on port 67, so this bind fails with EADDRINUSE when that
+    # server is up. In that case the built-in server hands out the
+    # addresses and we just skip ours.
+    dhcp_sock = None
+    try:
+        s = pool.socket(pool.AF_INET, pool.SOCK_DGRAM)
+        if _try_bind(s, ("0.0.0.0", DHCP_PORT)):
+            dhcp_sock = s
+            _arm_socket(dhcp_sock)
+        else:
+            print("DHCP port busy - using the built-in DHCP server")
+            try:
+                s.close()
+            except OSError:
+                pass
+    except OSError:
+        print("DHCP port busy - using the built-in DHCP server")
+        dhcp_sock = None
 
     http_sock = pool.socket(pool.AF_INET, pool.SOCK_STREAM)
-    http_sock.bind(("0.0.0.0", HTTP_PORT))
+    if not _try_bind(http_sock, ("0.0.0.0", HTTP_PORT)):
+        raise OSError("could not bind HTTP port")
     http_sock.listen(5)
     _arm_socket(http_sock)
 
     try:
         with open("status.txt", "w") as f:
             f.write("WebHacks AP is up. SSID: " + SSID + " IP: " + ip + "\n")
+            f.write("DHCP: " + ("ours" if dhcp_sock else "built-in") + "\n")
     except OSError:
         pass
 
@@ -313,17 +344,18 @@ def run():
     print("Serving captive portal. Join the WebHacks Wi-Fi.")
     n = 0
     while True:
-        try:
-            data, addr = dhcp_sock.recvfrom(1024)
-            out = handle_dhcp_request(data)
-            if out:
-                reply, yiaddr = out
-                try:
-                    dhcp_sock.sendto(reply, ("255.255.255.255", 68))
-                except OSError:
-                    dhcp_sock.sendto(reply, (yiaddr, 68))
-        except OSError:
-            pass
+        if dhcp_sock is not None:
+            try:
+                data, addr = dhcp_sock.recvfrom(1024)
+                out = handle_dhcp_request(data)
+                if out:
+                    reply, yiaddr = out
+                    try:
+                        dhcp_sock.sendto(reply, ("255.255.255.255", 68))
+                    except OSError:
+                        dhcp_sock.sendto(reply, (yiaddr, 68))
+            except OSError:
+                pass
         try:
             data, addr = dns_sock.recvfrom(512)
             resp = build_dns_response(data, ip)
