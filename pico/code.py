@@ -15,7 +15,11 @@
 # What it does NOT do: no exploit payloads. The 12 Userland buttons
 # are attempts to try, and they only log the tap on the page.
 # The fingerprint decides which attempt to build for real first.
+#
+# If this file crashes on startup, the reason is written to
+# error.txt on the CIRCUITPY drive. Send that file to Sam.
 
+import sys
 import time
 
 import board
@@ -169,6 +173,15 @@ def handle_http_request(req):
     return head.encode("utf-8") + body
 
 
+def _arm_socket(sock):
+    # Prefer a short timeout; fall back to non-blocking mode if the
+    # firmware's socket does not offer settimeout.
+    try:
+        sock.settimeout(0.05)
+    except (AttributeError, NotImplementedError, OSError):
+        sock.setblocking(False)
+
+
 def run():
     wifi.radio.start_ap(ssid=SSID)
     ip = str(wifi.radio.ipv4_address_ap)
@@ -178,12 +191,18 @@ def run():
 
     dns_sock = pool.socket(pool.AF_INET, pool.SOCK_DGRAM)
     dns_sock.bind(("0.0.0.0", DNS_PORT))
-    dns_sock.settimeout(0.05)
+    _arm_socket(dns_sock)
 
     http_sock = pool.socket(pool.AF_INET, pool.SOCK_STREAM)
     http_sock.bind(("0.0.0.0", HTTP_PORT))
     http_sock.listen(5)
-    http_sock.settimeout(0.05)
+    _arm_socket(http_sock)
+
+    try:
+        with open("status.txt", "w") as f:
+            f.write("WebHacks AP is up. SSID: " + SSID + " IP: " + ip + "\n")
+    except OSError:
+        pass
 
     led = digitalio.DigitalInOut(board.LED)
     led.direction = digitalio.Direction.OUTPUT
@@ -219,7 +238,30 @@ def run():
         n += 1
         if n % 20 == 0:
             led.value = not led.value
+        time.sleep(0.05)
+
+
+def main():
+    try:
+        run()
+    except Exception as e:
+        try:
+            with open("error.txt", "w") as f:
+                f.write("code.py crashed. Send this file to Sam:\n")
+                f.write(repr(e) + "\n")
+                try:
+                    sys.print_exception(e, f)
+                except Exception:
+                    try:
+                        import traceback
+                        traceback.print_exception(
+                            type(e), e, e.__traceback__, file=f)
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+        raise
 
 
 if __name__ == "__main__":
-    run()
+    main()
