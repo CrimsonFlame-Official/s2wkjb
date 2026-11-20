@@ -124,6 +124,9 @@ assert mod.build_dns_response(b"short", "192.168.4.1") is None
 assert mod.handle_dhcp_request(b"short") is None
 html = mod.render_page("TestUA/1.0")
 assert "TestUA/1.0" in html and "Integer overflow" in html
+assert "CVE-2025-24201" in html and "cve24201" in html, "page must carry the CVE-2025-24201 detector"
+assert "N-day CVE test" not in html, "old placeholder label must be replaced"
+assert "Danger" not in html, "no kernel/Danger section on the page"
 print("pure functions OK")
 
 import threading

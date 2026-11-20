@@ -69,7 +69,7 @@ button{display:block;width:100%;font-size:19px;padding:14px;margin:8px 0;border-
 <div id="buttons"></div>
 <div id="log">No attempt tapped yet.</div>
 <script>
-var attempts = ["Integer overflow","Use-after-free","Type confusion","Out-of-bounds buffer","Heap grooming","JIT bug","Font / CSS parsing","Media decoding","DOM use-after-free","Double free","N-day CVE test","Fuzzing"];
+var attempts = ["Integer overflow","Use-after-free","Type confusion","Out-of-bounds buffer","Heap grooming","JIT bug","Font / CSS parsing","Media decoding","DOM use-after-free","Double free","CVE-2025-24201 detector (WebGL)","Fuzzing"];
 document.getElementById("ua-js").textContent = navigator.userAgent;
 var rows = [
 ["Platform", navigator.platform],
@@ -91,6 +91,25 @@ for (var i = 0; i < rows.length; i++) {
 html += '<div class="label">' + rows[i][0] + '</div><div class="val">' + rows[i][1] + '</div>';
 }
 document.getElementById("fp").innerHTML = html;
+function cve24201() {
+var log = document.getElementById("log");
+var canvas = document.createElement("canvas");
+var gl = null;
+try { gl = canvas.getContext("webgl"); } catch (e) { gl = null; }
+if (!gl) {
+log.textContent = "CVE-2025-24201: WebGL not available - no risk from this one.";
+return;
+}
+var n = 0;
+while (gl.getError() !== gl.NO_ERROR && n < 10) { n++; }
+gl.enable(0x8D69);
+var err = gl.getError();
+if (err === gl.NO_ERROR) {
+log.textContent = "CVE-2025-24201: VULNERABLE - gl.enable(0x8D69) gave no error. The bug is present.";
+} else {
+log.textContent = "CVE-2025-24201: SAFE - WebGL returned an error. The fix is present.";
+}
+}
 function mk(list, parent) {
 var p = document.getElementById(parent);
 for (var i = 0; i < list.length; i++) {
@@ -98,6 +117,7 @@ for (var i = 0; i < list.length; i++) {
 var b = document.createElement("button");
 b.textContent = name;
 b.onclick = function() {
+if (name === "CVE-2025-24201 detector (WebGL)") { cve24201(); return; }
 document.getElementById("log").textContent = "Tapped: " + name + " - placeholder, logs only. If it does nothing, try the next one.";
 };
 p.appendChild(b);
