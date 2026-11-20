@@ -294,6 +294,14 @@ def _try_bind(sock, addr, tries=5):
     return False
 
 
+def _set_reuse(sock, pool):
+    # Let a fresh run rebind a port still in TIME_WAIT after a reload.
+    try:
+        sock.setsockopt(pool.SOL_SOCKET, pool.SO_REUSEADDR, 1)
+    except (AttributeError, OSError):
+        pass
+
+
 def run():
     wifi.radio.start_ap(ssid=SSID)
     ip = str(wifi.radio.ipv4_address_ap)
@@ -302,6 +310,7 @@ def run():
     pool = socketpool.SocketPool(wifi.radio)
 
     dns_sock = pool.socket(pool.AF_INET, pool.SOCK_DGRAM)
+    _set_reuse(dns_sock, pool)
     if not _try_bind(dns_sock, ("0.0.0.0", DNS_PORT)):
         raise OSError("could not bind DNS port")
     _arm_socket(dns_sock)
@@ -313,6 +322,7 @@ def run():
     dhcp_sock = None
     try:
         s = pool.socket(pool.AF_INET, pool.SOCK_DGRAM)
+        _set_reuse(s, pool)
         if _try_bind(s, ("0.0.0.0", DHCP_PORT)):
             dhcp_sock = s
             _arm_socket(dhcp_sock)
@@ -327,6 +337,7 @@ def run():
         dhcp_sock = None
 
     http_sock = pool.socket(pool.AF_INET, pool.SOCK_STREAM)
+    _set_reuse(http_sock, pool)
     if not _try_bind(http_sock, ("0.0.0.0", HTTP_PORT)):
         raise OSError("could not bind HTTP port")
     http_sock.listen(5)
@@ -342,11 +353,18 @@ def run():
     led = digitalio.DigitalInOut(board.LED)
     led.direction = digitalio.Direction.OUTPUT
     print("Serving captive portal. Join the WebHacks Wi-Fi.")
+    # socketpool only has the non-allocating recv calls: recvfrom_into
+    # for UDP (returns the sender) and recv_into for TCP. There is no
+    # recvfrom() or recv() on a socketpool Socket.
+    dhcp_buf = bytearray(1024)
+    dns_buf = bytearray(512)
+    http_buf = bytearray(1024)
     n = 0
     while True:
         if dhcp_sock is not None:
             try:
-                data, addr = dhcp_sock.recvfrom(1024)
+                nbytes, _addr = dhcp_sock.recvfrom_into(dhcp_buf)
+                data = bytes(dhcp_buf[:nbytes])
                 out = handle_dhcp_request(data)
                 if out:
                     reply, yiaddr = out
@@ -357,7 +375,8 @@ def run():
             except OSError:
                 pass
         try:
-            data, addr = dns_sock.recvfrom(512)
+            nbytes, addr = dns_sock.recvfrom_into(dns_buf)
+            data = bytes(dns_buf[:nbytes])
             resp = build_dns_response(data, ip)
             if resp:
                 dns_sock.sendto(resp, addr)
@@ -369,10 +388,10 @@ def run():
             try:
                 req = b""
                 while b"\r\n\r\n" not in req and len(req) < 8192:
-                    chunk = conn.recv(1024)
-                    if not chunk:
+                    nbytes = conn.recv_into(http_buf)
+                    if not nbytes:
                         break
-                    req += chunk
+                    req += bytes(http_buf[:nbytes])
                 conn.sendall(handle_http_request(req))
             except OSError:
                 pass
